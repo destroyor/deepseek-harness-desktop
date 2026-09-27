@@ -5,6 +5,33 @@
 /deepseek-harness:
   en: f68c4f080ce55ff2
   zh: 88a76d7f7f0b260e
+/deepseek-harness/linux-x86-64-desktop-build-this-snapshot:
+  en: 7bb90a1e34a000f2
+  zh: bd32e6d9247d8bd4
+/deepseek-harness/linux-x86-64-desktop-build-this-snapshot/what-the-patch-changes:
+  en: e4bb9765c7a6cd8a
+  zh: f12c531ad7b32762
+/deepseek-harness/linux-x86-64-desktop-build-this-snapshot/the-sharp-crash-on-linux-and-the-fix:
+  en: 49958e558b4f64db
+  zh: bf11b2d9fd1efd27
+/deepseek-harness/linux-x86-64-desktop-build-this-snapshot/requirements:
+  en: b5a4e8f57bf4196e
+  zh: 48f8785bdd9f8838
+/deepseek-harness/linux-x86-64-desktop-build-this-snapshot/build:
+  en: 73f2778fd0d642f0
+  zh: 2f96b790e56c79c1
+/deepseek-harness/linux-x86-64-desktop-build-this-snapshot/run:
+  en: 1ff11eabdf0dea08
+  zh: d021368a5b6b4a4a
+/deepseek-harness/linux-x86-64-desktop-build-this-snapshot/install-on-arch-linux:
+  en: 66f9d25785a36602
+  zh: 5480bc874b03fdca
+/deepseek-harness/linux-x86-64-desktop-build-this-snapshot/verify-the-fix:
+  en: bcb7dae3b6eefd01
+  zh: 60248e520253e6fc
+/deepseek-harness/linux-x86-64-desktop-build-this-snapshot/known-limitations:
+  en: f206a4c28d583c5d
+  zh: 22b5458c98c2bbfd
 /deepseek-harness/developer-preview:
   en: 4ef4d8a71ac143f0
   zh: 1bfc3149ba8e5543
