@@ -8,6 +8,112 @@ It is built on an **everything-is-a-plugin** architecture and powered by [Cordis
 
 Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
 
+## Linux (x86_64) desktop build — this snapshot
+
+This repository is a snapshot of the official source at tag `dsh-v0.2.1-rc.2` plus a patch that adds
+a `linux-x64` desktop build target to `pnpm run package:desktop:dir`. Upstream only ships `mac-arm64`,
+`mac-x64` and `win-x64`, and does not support the Linux desktop build.
+
+It also fixes the `sharp` image-decoding crash that otherwise makes the packaged app unusable on Linux,
+repairs the Office engine probe inside the packaged archive so document conversion works on Linux, and
+gives the Linux window the same frameless caption Windows already has.
+
+### What the patch changes
+
+| File | Change |
+| --- | --- |
+| `apps/desktop/scripts/desktop-build-paths.mjs` / `.d.mts` | Accept `linux-x64` in `SUPPORTED_TARGETS`, and report `linux` as the platform of the payload it prepares |
+| `apps/desktop/scripts/package-target.ts` | Add the `linux-x64` target (`--linux --x64`) |
+| `apps/desktop/scripts/desktop-upload-plan.ts` | Register the `linux-x64` upload descriptor |
+| `apps/desktop/scripts/retain-desktop-ci.ts` | Stop the Windows/macOS-only retention step for a Linux target |
+| `apps/desktop/scripts/desktop-package-environment.mjs` / `.d.mts` | Load `.env.linux`, accept only shared settings for a Linux target |
+| `apps/desktop/scripts/desktop-auto-update-environment.mjs` / `.d.mts` | Accept `linux-x64` in `UPDATE_TARGETS` |
+| `apps/desktop/scripts/desktop-toolchain-preflight.ts` | Accept a Linux target |
+| `apps/desktop/scripts/prepare-runtime.ts` | Use the flat `electron` binary on Linux |
+| `apps/desktop/scripts/prepare-cli.ts` | Mark the POSIX `dsh` launcher executable for every non-Windows target |
+| `apps/desktop/scripts/prepare-dsh.ts` | Linux `electron` path; swap in the Electron-safe `sharp` rebuild while packaging |
+| `apps/desktop/scripts/runtime-patch-policy.ts` + `apps/desktop/patches/@deepseek-ai__libreoffice-kit@0.1.5.patch` | Runtime-only patch so the Office engine probe reaches the bundled WASM engine inside `app.asar` |
+| `apps/desktop/scripts/smoke-packaged-runtime.ts` | Locate `linux-unpacked` through the shared artifact-output resolver |
+| `apps/desktop/scripts/electron-builder-config.mjs` | Linux icon, `executableName: 'deepseek-harness'`, and no mandatory-update policy |
+| `apps/desktop/.env.linux` (new) | Linux release settings; mirrors `.env.windows.example`, no signing credentials |
+| `apps/desktop/src/main.ts` | Linux joins the hidden-titlebar and window-controls-overlay path, installs no native menu bar, and declares the installed `.desktop` filename as the shell's application ID |
+| `apps/desktop/src/preload-windows.ts` | Publish the caption marker, Application/Edit entries and titlebar colors on Linux as well |
+| `apps/desktop/tests/*.spec.ts` | Cover the Linux target, titlebar, menu, caption, patch plan and packaged-smoke behavior |
+
+### The `sharp` crash on Linux, and the fix
+
+`sharp` ships `@img/sharp-libvips-linux-x64`, a libvips built against a **statically linked glib**, and
+that library exports its own `g_*` symbols. On Linux, Electron loads the system `libglib-2.0.so.0` into
+the global symbol scope, so libvips' internal calls resolve to Electron's glib instead of libvips' own.
+The mismatch corrupts the heap: encoding still works, but **decoding any image kills the process with
+SIGSEGV** (upstream: electron#46323, unfixed).
+
+The packaging sequence therefore replaces the runtime's `sharp` with a pinned, content-addressed
+download of `@janhapke/sharp-electron@0.35.4-electron.1`, whose `linux-x64` build renames the colliding
+glib symbols at link time, and removes the `@img/sharp-linux-x64` and `@img/sharp-libvips-linux-x64`
+binaries the rebuild supersedes. No system libvips or native toolchain is required. This runs after the
+production `node_modules` copy and before the runtime inventory is hashed, keeping the packaged payload
+consistent.
+
+### Office documents on Linux
+
+`@deepseek-ai/libreoffice-kit` publishes no Linux native engine, and inside an archive its probe read
+Electron's `null` answer for a missing asar entry as a present but incomplete engine, so the bundled
+WASM engine stayed out of reach. The runtime-only patch distinguishes the two answers, so packaged
+Linux builds convert Office documents through the WASM engine.
+
+### Requirements
+
+- Node.js, pnpm (through Corepack), and `tar` for extracting the pinned `sharp` rebuild archive
+
+### Build
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run package:desktop:dir
+```
+
+`package:desktop:dir` selects `linux-x64` automatically when run on a Linux host. Artifacts are written
+to `apps/desktop/.desktop-build/targets/linux-x64/artifacts/linux-unpacked/`.
+
+### Run
+
+```sh
+apps/desktop/.desktop-build/targets/linux-x64/artifacts/linux-unpacked/deepseek-harness
+```
+
+### Install on Arch Linux
+
+`chrome-sandbox` must be owned by `root:root` with mode `4755`, or Electron refuses to start. To
+install the build under `/opt` and expose it on `PATH`:
+
+```sh
+sudo install -d /opt/deepseek-harness
+sudo cp -r apps/desktop/.desktop-build/targets/linux-x64/artifacts/linux-unpacked/. /opt/deepseek-harness/
+sudo chown -R root:root /opt/deepseek-harness
+sudo chmod 4755 /opt/deepseek-harness/chrome-sandbox
+sudo ln -sf /opt/deepseek-harness/deepseek-harness /usr/bin/deepseek-harness
+```
+
+### Verify the fix
+
+The packaged runtime smoke test reports `sharp: true`, and an encode/decode round trip executed inside
+Electron (`ELECTRON_RUN_AS_NODE=1`) exits 0, where it previously segfaulted on every run.
+
+### Known limitations
+
+- Unofficial and unsupported by upstream; the patch will need updating when the pinned tag moves.
+- `apps/desktop/.env.linux` selects the `test` auto-update origins.
+- Linux builds carry no mandatory-update policy: the policy service serves Windows and macOS only, and the
+  desktop shell refuses to start on other platforms while a policy is present.
+- The Linux caption uses Electron's Window Controls Overlay, so the window buttons are drawn by Electron
+  from the colors the page reports rather than by the GTK theme.
+- Linux shell integration resolves the window icon through the XDG application ID, which Electron derives
+  from `app.name` — here the npm package name, which no installed `.desktop` entry carries. The shell
+  therefore declares `deepseek-harness` as its desktop name before `ready`; without it the dock falls
+  back to a generic executable glyph.
+- Office conversion runs on the LibreOfficeKit WASM engine; a Linux native engine is not published.
+
 ## Developer preview
 
 DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**

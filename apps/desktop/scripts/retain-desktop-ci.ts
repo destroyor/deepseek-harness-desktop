@@ -34,6 +34,9 @@ export function desktopReleasesRoot(env: NodeJS.ProcessEnv): string {
  */
 export async function retainDesktopCi(env: NodeJS.ProcessEnv, appRoot = resolve(import.meta.dirname, '..')): Promise<string> {
   const target = resolveDesktopBuildTarget(env)
+  // The retention store, installer naming and update metadata below are Windows/macOS-only,
+  // so this CI step has nothing to retain for the Linux desktop build.
+  if (target === 'linux-x64') throw new Error('desktop retention: linux-x64 packages have no CI retention workflow')
   const windows = target === 'win-x64'
   const platform = windows ? 'win32' : 'darwin'
   const settings = loadDesktopPackageEnvironment(platform, env, appRoot, { unsigned: true })
