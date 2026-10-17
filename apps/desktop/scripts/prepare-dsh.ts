@@ -1,8 +1,9 @@
 /** Materialize the complete production runtime before publishing Desktop resources. */
 
 import { packagingStep } from './packaging-step.mjs'
-import { spawn } from 'node:child_process'
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join, relative, resolve } from 'node:path'
 import { desktopNodeEnvironment } from '../src/node-environment.ts'
@@ -42,7 +43,7 @@ const STORE_ROOT = join(BUILD_ROOT, 'store')
 const RUNTIME_ROOT = BUILD_PATHS.runtime
 const PNPM_BUILD_STATE = BUILD_PATHS.dshPnpm
 const PACKAGE_SET_ROOT = BUILD_PATHS.packageSet
-const NODE = join(BUILD_PATHS.electron, process.platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
+const NODE = join(BUILD_PATHS.electron, process.platform === 'win32' ? 'electron.exe' : process.platform === 'linux' ? 'electron' : 'Electron.app/Contents/MacOS/Electron')
 const PNPM = join(RUNTIME_ROOT, 'primary-runtime', 'dependencies', 'pnpm', 'bin', 'pnpm.mjs')
 
 function manifestVersion(path: string, subject: string): string {
@@ -110,6 +111,61 @@ function runPnpm(args: readonly string[]): Promise<void> {
   })
 }
 
+/** Electron-safe sharp rebuild that carries its own libvips with the colliding symbols renamed. */
+const SHARP_ELECTRON_PACKAGE = '@janhapke/sharp-electron'
+const SHARP_ELECTRON_VERSION = '0.35.4-electron.1'
+/** SHA-256 of the published tarball; a mismatch stops packaging instead of shipping unverified binaries. */
+const SHARP_ELECTRON_SHA256 = 'af967ccc9e306e36a92cd017bc6121ab06521c8fc4d3bc642d3e90f62e3e44c6'
+/** Registry packages the rebuild supersedes; their binaries would keep crashing the application. */
+const SHARP_REPLACED_PACKAGES = ['@img/sharp-linux-x64', '@img/sharp-libvips-linux-x64']
+
+/**
+ * The packaged libvips statically links its own glib, whose symbols the system glib Electron links
+ * for GTK preempts on Linux, so the first image decode unrefs a GObject through the wrong one and
+ * the process dies with SIGSEGV (electron#46323). `@janhapke/sharp-electron` renames the colliding
+ * symbols at link time, which rebuilds the sharp binary without adding a system libvips dependency.
+ * @param root - Materialized dsh runtime tree whose node_modules carries sharp.
+ * @param cache - Directory shared with the other pinned packaging downloads.
+ * @returns Resolves after the runtime's sharp is the Electron-safe rebuild.
+ */
+async function installElectronSafeSharp(root: string, cache: string): Promise<void> {
+  const modules = join(root, 'node_modules')
+  const destination = join(modules, 'sharp')
+  if (!existsSync(destination) || !statSync(destination).isDirectory()) {
+    throw new Error(`desktop runtime: ${destination} is not an installed package directory`)
+  }
+  mkdirSync(cache, { recursive: true })
+  const archive = join(cache, SHARP_ELECTRON_SHA256)
+  let bytes: Buffer
+  try {
+    bytes = readFileSync(archive)
+  }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    const url = `https://registry.npmjs.org/${SHARP_ELECTRON_PACKAGE.replace('/', '%2F')}/-/${
+      SHARP_ELECTRON_PACKAGE.split('/')[1]}-${SHARP_ELECTRON_VERSION}.tgz`
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`desktop runtime: electron-safe sharp download failed with ${String(response.status)} ${url}`)
+    bytes = Buffer.from(await response.arrayBuffer())
+    if (createHash('sha256').update(bytes).digest('hex') !== SHARP_ELECTRON_SHA256) {
+      throw new Error(`desktop runtime: electron-safe sharp tarball does not match ${SHARP_ELECTRON_SHA256}`)
+    }
+    writeFileSync(archive, bytes)
+  }
+  const staging = join(cache, `extract-${SHARP_ELECTRON_SHA256}`)
+  rmSync(staging, { recursive: true, force: true })
+  mkdirSync(staging, { recursive: true })
+  execFileSync('tar', ['-xzf', archive, '-C', staging])
+  const source = join(staging, 'package', 'linux-x64', 'sharp')
+  if (!existsSync(join(source, 'src', 'build', 'Release'))) {
+    throw new Error(`desktop runtime: ${archive} carries no linux-x64 sharp build`)
+  }
+  rmSync(destination, { recursive: true, force: true })
+  cpSync(source, destination, { recursive: true, dereference: true })
+  for (const name of SHARP_REPLACED_PACKAGES) rmSync(join(modules, ...name.split('/')), { recursive: true, force: true })
+  rmSync(staging, { recursive: true, force: true })
+}
+
 async function main(): Promise<void> {
   try {
     await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:reset', async () => {
@@ -144,6 +200,10 @@ async function main(): Promise<void> {
         filter: source => desktopRuntimeFileExclusion(relative(modules, source), target, officeEngine) === undefined,
       })
     })
+    if (process.platform === 'linux') {
+      await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:linux-sharp',
+        () => installElectronSafeSharp(DSH_OUTPUT_ROOT, BUILD_PATHS.downloads))
+    }
     writeFileSync(join(DSH_OUTPUT_ROOT, 'package.json'), `${JSON.stringify({
       name: '@deepseek-ai/dsh-desktop-runtime', private: true, version: release.version, type: 'module',
       dependencies: Object.fromEntries(packageSet.packages.map(entry => [entry.name, entry.version])),
