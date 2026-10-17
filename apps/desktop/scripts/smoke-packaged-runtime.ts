@@ -11,12 +11,18 @@ const paths = resolveDesktopTargetBuildPaths()
 const { values } = parseArgs({ options: { unsigned: { type: 'boolean', default: false }, 'skip-notarization': { type: 'boolean', default: false } }, allowPositionals: false })
 const target = resolveDesktopBuildTarget()
 const windows = target === 'win-x64'
+const linux = target.startsWith('linux-')
 const artifacts = desktopArtifactOutput(paths, { unsigned: values.unsigned, skipNotarization: values['skip-notarization'] }).directory
+// Linux keeps the executable and resources in a flat unpacked directory, where macOS nests both
+// inside the bundle and Windows keeps them beside the executable.
 const application = windows ? join(artifacts, 'win-unpacked')
+  : linux ? join(artifacts, 'linux-unpacked')
   : join(artifacts, target === 'mac-arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app', 'Contents')
-const resources = join(application, windows ? 'resources' : 'Resources')
-const executable = windows ? join(application, 'DeepSeek Harness.exe') : join(application, 'MacOS', 'DeepSeek Harness')
-const descriptor = await verifyDesktopRuntime(paths.dsh, readDesktopRuntime(paths.dsh).release.version,
-  resolveDesktopPackageTarget(target))
+const resources = join(application, windows || linux ? 'resources' : 'Resources')
+const executable = windows ? join(application, 'DeepSeek Harness.exe')
+  : linux ? join(application, 'deepseek-harness')
+  : join(application, 'MacOS', 'DeepSeek Harness')
+const packagedTarget = resolveDesktopPackageTarget(target)
+const descriptor = await verifyDesktopRuntime(paths.dsh, readDesktopRuntime(paths.dsh).release.version, packagedTarget)
 if (windows && !values.unsigned) await verifyWindowsCode(application)
 await smokePreparedRuntime(join(resources, 'app.asar', 'dsh'), executable, join(resources, 'runtime'), descriptor)

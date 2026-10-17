@@ -8,6 +8,11 @@ export type DesktopRuntimePatch =
 
 /** Every workspace patch requires an explicit Desktop decision; runtime-only entries may add or replace a patch. */
 export const DESKTOP_RUNTIME_PATCHES: Readonly<Record<string, DesktopRuntimePatch>> = {
+  '@deepseek-ai/libreoffice-kit@0.1.5': {
+    scope: 'runtime-only',
+    path: 'apps/desktop/patches/@deepseek-ai__libreoffice-kit@0.1.5.patch',
+    reason: 'Electron asar answers null where Node answers undefined, so the published probe reads the absent native engine as present and never reaches the bundled WASM engine inside an archive.',
+  },
   '@earendil-works/pi-ai@1.1.0': { scope: 'shared', reason: 'Runtime providers need the streamed argument parsing fix.' },
   '@electron/osx-sign@1.3.3': { scope: 'workspace-only', reason: 'Signing executes on the build host.' },
   '@fortune-sheet/core@1.0.4': { scope: 'workspace-only', reason: 'Patched spreadsheet code is embedded in the client bundle.' },
