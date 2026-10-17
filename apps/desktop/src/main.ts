@@ -93,6 +93,14 @@ app.setAppLogsPath()
 function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
   return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
 }
+/**
+ * Platforms that hide the native titlebar and host the Application/Edit caption
+ * entries inside the page instead of a native menu bar.
+ * @returns Whether the shell draws its own caption row and keeps the window controls in an overlay.
+ */
+function usesNativeCaption(): boolean {
+  return process.platform === 'win32' || process.platform === 'linux'
+}
 /** Quit without the task confirmation; the caller has already decided the application must stop. */
 function quitWithoutConfirmation(): void {
   skipQuitConfirmation = true
@@ -194,6 +202,13 @@ protocol.registerSchemesAsPrivileged([{
   },
 }])
 
+// Linux shell integration resolves a window's icon through the XDG application ID, which
+// Electron derives from app.name — the npm package name here, which no installed .desktop
+// entry carries. Name the entry this build installs so the dock finds the icon instead of
+// falling back to a generic executable glyph. The ID is reported when a window is mapped,
+// so this has to run before 'ready'.
+if (process.platform === 'linux') app.setDesktopName('deepseek-harness')
+
 interface RuntimeResources {
   readonly nodeBin: string
   readonly node: string
@@ -263,7 +278,9 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     minWidth: 520,
     minHeight: 600,
     show,
-    ...(process.platform === 'win32' && primary ? {
+    // Windows and Linux keep the native window controls in an overlay while the
+    // page draws the caption row, so neither needs a separate native menu bar.
+    ...(primary && usesNativeCaption() ? {
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: chromeFallbackFill(),
         symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
@@ -1081,11 +1098,12 @@ async function main(): Promise<void> {
     devToolsF12Shortcut,
   ]
   const refreshApplicationMenu = (): void => {
-    Menu.setApplicationMenu(Menu.buildFromTemplate(process.platform === 'win32'
-      ? windowsDevToolsShortcuts : [{
-        label: darwin ? app.name : currentDesktopLocale().messages.application,
-        submenu: [...applicationItems(), devToolsF12Shortcut],
-      }, ...platformMenus()]))
+    // Linux draws the title bar like Windows does, so the native application menu only applies where
+    // the caption is not ours; both keep the invisible DevTools shortcuts.
+    Menu.setApplicationMenu(Menu.buildFromTemplate(usesNativeCaption() ? windowsDevToolsShortcuts : [{
+      label: darwin ? app.name : currentDesktopLocale().messages.application,
+      submenu: [...applicationItems(), devToolsF12Shortcut],
+    }, ...platformMenus()]))
     tray?.relabel()
   }
   refreshApplicationMenu()
@@ -1114,7 +1132,7 @@ async function main(): Promise<void> {
     ...(process.platform === 'win32' ? { icon: nativeImage.createFromPath(trayIconPath) } : {}),
   })
 
-  if (process.platform === 'win32') {
+  if (usesNativeCaption()) {
     ipcMain.handle(DESKTOP_IPC.windowsMenu, (event, name: unknown, x: unknown, y: unknown) => {
       assertDesktopSender(event, ['app'])
       if (mainWindow === undefined || event.sender !== mainWindow.webContents
