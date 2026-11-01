@@ -10,7 +10,8 @@ Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://de
 
 ## Linux (x86_64) desktop build — this snapshot
 
-This repository is a snapshot of the official source at tag `dsh-v0.2.1-rc.5` plus a patch that adds
+This repository is a snapshot of the official source at upstream master `ce7073d512` (which already
+contains both the `dsh-v0.2.1-rc.5` and `dsh-v0.2.2-alpha.2` lines) plus a patch that adds
 a `linux-x64` desktop build target to `pnpm run package:desktop:dir`. Upstream only ships `mac-arm64`,
 `mac-x64` and `win-x64`, and does not support the Linux desktop build.
 

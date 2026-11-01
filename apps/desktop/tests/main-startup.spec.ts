@@ -574,6 +574,15 @@ describe('desktop main startup', () => {
     expect(visible.filter(item => item.role === 'toggleDevTools')).toEqual([
       { role: 'toggleDevTools', label: messages.toggleDevToolsMenu },
     ])
+    if (platform === 'linux') {
+      // Linux draws the caption in the page, so the localized DevTools grouping lives there and the
+      // native menu keeps only the hidden shortcuts — the same template Windows uses.
+      expect(harness.menu.mock.calls[0]![0]).toEqual([
+        { role: 'toggleDevTools', visible: false },
+        { role: 'toggleDevTools', visible: false, accelerator: 'F12' },
+      ])
+      return
+    }
     if (platform === 'win32') {
       expect(harness.menu.mock.calls[0]![0]).toEqual([
         { role: 'toggleDevTools', visible: false },
