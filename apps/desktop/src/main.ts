@@ -1107,8 +1107,12 @@ async function main(): Promise<void> {
     tray?.relabel()
   }
   refreshApplicationMenu()
-  const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
-  if (process.platform === 'win32') {
+  // Linux ships a small tray bitmap instead of the multi-size Windows ICO; generate the file with
+  // `magick resources/icon.png -resize 24x24 resources/tray-linux.png` before packaging.
+  const trayIconPath = development
+    ? join(app.getAppPath(), 'resources', process.platform === 'win32' ? 'tray-windows.ico' : 'tray-linux.png')
+    : join(process.resourcesPath, process.platform === 'win32' ? 'tray.ico' : 'tray-linux.png')
+  if (process.platform !== 'darwin') {
     // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
     try {
       tray = new DesktopTray({ iconPath: trayIconPath, locale: currentDesktopLocale,
@@ -1127,9 +1131,9 @@ async function main(): Promise<void> {
     // macOS raises the open alert with the application; Electron exposes no handle to the Windows task
     // dialog, so a repeated request there only joins the open decision.
     focus: () => { if (process.platform === 'darwin') app.focus({ steal: true }) },
-    // The task dialog draws its main icon at the system icon size; the multi-size ICO yields that
-    // size directly, where the 1024 px PNG would be scaled down by GDI.
-    ...(process.platform === 'win32' ? { icon: nativeImage.createFromPath(trayIconPath) } : {}),
+    // The Windows task dialog draws its main icon at the system icon size; the multi-size ICO yields
+    // that size directly, where the 1024 px PNG would be scaled down by GDI. Linux reuses the tray bitmap.
+    ...(process.platform !== 'darwin' ? { icon: nativeImage.createFromPath(trayIconPath) } : {}),
   })
 
   if (usesNativeCaption()) {

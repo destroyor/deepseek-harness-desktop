@@ -10,7 +10,7 @@ Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://de
 
 ## Linux (x86_64) desktop build — this snapshot
 
-This repository is a snapshot of the official source at tag `dsh-v0.2.1-rc.2` plus a patch that adds
+This repository is a snapshot of the official source at tag `dsh-v0.2.1-rc.5` plus a patch that adds
 a `linux-x64` desktop build target to `pnpm run package:desktop:dir`. Upstream only ships `mac-arm64`,
 `mac-x64` and `win-x64`, and does not support the Linux desktop build.
 
@@ -34,9 +34,10 @@ gives the Linux window the same frameless caption Windows already has.
 | `apps/desktop/scripts/prepare-dsh.ts` | Linux `electron` path; swap in the Electron-safe `sharp` rebuild while packaging |
 | `apps/desktop/scripts/runtime-patch-policy.ts` + `apps/desktop/patches/@deepseek-ai__libreoffice-kit@0.1.5.patch` | Runtime-only patch so the Office engine probe reaches the bundled WASM engine inside `app.asar` |
 | `apps/desktop/scripts/smoke-packaged-runtime.ts` | Locate `linux-unpacked` through the shared artifact-output resolver |
-| `apps/desktop/scripts/electron-builder-config.mjs` | Linux icon, `executableName: 'deepseek-harness'`, and no mandatory-update policy |
+| `apps/desktop/scripts/electron-builder-config.mjs` | Linux icon, `executableName: 'deepseek-harness'`, a 24 px tray bitmap in the packaged resources, and no mandatory-update policy |
+| `apps/desktop/cli/dsh` | Fall back to the executable beside the resources directory when the macOS `Contents/MacOS` path is absent |
 | `apps/desktop/.env.linux` (new) | Linux release settings; mirrors `.env.windows.example`, no signing credentials |
-| `apps/desktop/src/main.ts` | Linux joins the hidden-titlebar and window-controls-overlay path, installs no native menu bar, and declares the installed `.desktop` filename as the shell's application ID |
+| `apps/desktop/src/main.ts` | Linux joins the hidden-titlebar and window-controls-overlay path, installs no native menu bar, declares the installed `.desktop` filename as the shell's application ID, and creates the system tray that upstream gates to Windows |
 | `apps/desktop/src/preload-windows.ts` | Publish the caption marker, Application/Edit entries and titlebar colors on Linux as well |
 | `apps/desktop/tests/*.spec.ts` | Cover the Linux target, titlebar, menu, caption, patch plan and packaged-smoke behavior |
 
@@ -64,12 +65,13 @@ Linux builds convert Office documents through the WASM engine.
 
 ### Requirements
 
-- Node.js, pnpm (through Corepack), and `tar` for extracting the pinned `sharp` rebuild archive
+- Node.js, pnpm (through Corepack), `tar` for extracting the pinned `sharp` rebuild archive, and ImageMagick for the tray bitmap
 
 ### Build
 
 ```sh
 pnpm install --frozen-lockfile
+magick apps/desktop/resources/icon.png -resize 24x24 apps/desktop/resources/tray-linux.png
 pnpm run package:desktop:dir
 ```
 
